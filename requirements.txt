@@ -1,9 +1,9 @@
 streamlit
 graphviz
 torch
-transformers
 spacy
 scikit-learn
 matplotlib
 ipywidgets
 accelerate>=0.26.0
+transformers>=4.30.0
