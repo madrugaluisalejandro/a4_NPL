@@ -16,12 +16,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 import spacy
-try:
-    nlp = spacy.load("es_core_news_sm")
-except OSError:
-    import subprocess
-    subprocess.run(["python", "-m", "spacy", "download", "es_core_news_sm"])
-    nlp = spacy.load("es_core_news_sm")
+nlp = spacy.load("es_core_news_sm")
 except Exception as e:
     print("Instala el modelo spaCy para español: !python -m spacy download es_core_news_sm")
     raise e
