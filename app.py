@@ -27,18 +27,28 @@ def load_summary_model():
         model_max_length=1024,
         truncation=True
     )
+
+    if torch.cuda.is_available():
+        device = 0
+        device_map = "auto"
+    else:
+        device = -1
+        device_map = None  # Puedes omitir este parámetro si prefieres
+
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         torch_dtype=torch.float32,
-        device_map="auto"
+        device_map=device_map
     )
+
     summarizer = pipeline(
         "summarization",
-        model=model_name,
+        model=model,
         tokenizer=tokenizer,
-        device=0 if torch.cuda.is_available() else -1
+        device=device
     )
     return summarizer
+
 
 # Cargar clasificador de emociones
 @st.cache_resource
