@@ -1,25 +1,46 @@
 import streamlit as st
 import spacy
-import json
-from transformers import pipeline
-import matplotlib.pyplot as plt
+import torch
+from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 from sklearn.feature_extraction.text import TfidfVectorizer
+import json
 
 # Configuración inicial de la página
 st.set_page_config(page_title="Análisis de Texto", layout="wide")
 
-# Cargar el modelo de spaCy
+# Cargar modelo spaCy
 @st.cache_resource
 def load_spacy_model():
     try:
         return spacy.load("es_core_news_sm")
     except Exception as e:
-        st.error("Por favor, instala el modelo de spaCy: python -m spacy download es_core_news_sm")
+        st.error("Error: Es necesario instalar el modelo de spaCy para español")
+        st.code("python -m spacy download es_core_news_sm")
         raise e
 
-nlp = load_spacy_model()
+# Cargar modelo de resumen
+@st.cache_resource
+def load_summary_model():
+    model_name = "facebook/bart-large-cnn"
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_name,
+        model_max_length=1024,
+        truncation=True
+    )
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        torch_dtype=torch.float32,
+        device_map="auto"
+    )
+    summarizer = pipeline(
+        "summarization",
+        model=model_name,
+        tokenizer=tokenizer,
+        device=0 if torch.cuda.is_available() else -1
+    )
+    return summarizer
 
-# Cargar el modelo de emociones
+# Cargar clasificador de emociones
 @st.cache_resource
 def load_emotion_classifier():
     return pipeline(
@@ -28,13 +49,14 @@ def load_emotion_classifier():
         return_all_scores=True
     )
 
-# Base de conocimientos
+# Función para tokenizar
+def spacy_tokenizer(text):
+    nlp = load_spacy_model()
+    doc = nlp(text)
+    return [token.text for token in doc if token.pos_ in ["NOUN", "VERB"]]
+
+# Cargar base de conocimientos
 base_conocimientos = {
-    "informacion_general": {
-        "titulo": "Noticias sobre cambio climático",
-        "fuentes": ["IPCC", "UNEP", "NASA"],
-        "definicion": "El cambio climático se refiere a cambios de largo plazo en los patrones de temperatura y clima."
-    },
     "datos_relevantes": {
         "temperatura_global": "+1.2°C desde la era preindustrial",
         "nivel_mar": "Incremento de 3.4 mm por año en promedio",
@@ -42,12 +64,6 @@ base_conocimientos = {
     }
 }
 
-# Función para tokenizar usando spaCy
-def spacy_tokenizer(text):
-    doc = nlp(text)
-    return [token.text for token in doc if token.pos_ in ["NOUN", "VERB"]]
-
-# Clase para análisis de texto
 class AnalizadorTexto:
     def __init__(self):
         self.emotion_classifier = load_emotion_classifier()
@@ -56,26 +72,51 @@ class AnalizadorTexto:
             max_features=20,
             ngram_range=(1,2)
         )
-    
+        self.summarizer = load_summary_model()
+
+    def obtener_resumen(self, texto, max_length=150):
+        try:
+            summary = self.summarizer(
+                texto,
+                max_length=max_length,
+                min_length=30,
+                do_sample=False,
+                truncation=True
+            )
+            return summary[0]['summary_text']
+        except Exception as e:
+            st.error(f"Error en la generación del resumen: {str(e)}")
+            return ""
+
     def extraer_palabras_clave(self, texto):
-        tfidf_matrix = self.vectorizer.fit_transform([texto])
-        feature_names = self.vectorizer.get_feature_names_out()
-        tfidf_scores = tfidf_matrix.toarray()[0]
-        palabra_score = dict(zip(feature_names, tfidf_scores))
-        return dict(sorted(palabra_score.items(), key=lambda x: x[1], reverse=True))
-    
+        try:
+            tfidf_matrix = self.vectorizer.fit_transform([texto])
+            feature_names = self.vectorizer.get_feature_names_out()
+            tfidf_scores = tfidf_matrix.toarray()[0]
+            palabra_score = dict(zip(feature_names, tfidf_scores))
+            return dict(sorted(palabra_score.items(), key=lambda x: x[1], reverse=True))
+        except Exception as e:
+            st.error(f"Error en extracción de palabras clave: {str(e)}")
+            return {}
+
     def clasificar_emociones(self, texto):
-        resultados = self.emotion_classifier(texto)
-        if len(resultados) > 0:
-            return {item['label']: item['score'] for item in resultados[0]}
-        return {}
+        try:
+            resultados = self.emotion_classifier(texto)
+            if len(resultados) > 0:
+                return {item['label']: item['score'] for item in resultados[0]}
+            return {}
+        except Exception as e:
+            st.error(f"Error en clasificación de emociones: {str(e)}")
+            return {}
 
     def procesar_texto(self, texto):
+        resumen = self.obtener_resumen(texto)
         palabras_clave = self.extraer_palabras_clave(texto)
         emociones = self.clasificar_emociones(texto)
         emocion_predominante = max(emociones.items(), key=lambda x: x[1])[0] if emociones else None
         
         return {
+            "resumen": resumen,
             "palabras_clave": palabras_clave,
             "emociones": emociones,
             "emocion_predominante": emocion_predominante
@@ -84,6 +125,10 @@ class AnalizadorTexto:
 def main():
     st.title("Analizador de Texto")
     
+    # Inicialización del estado de la sesión
+    if 'analizador' not in st.session_state:
+        st.session_state.analizador = AnalizadorTexto()
+
     # Área de entrada de texto
     texto_usuario = st.text_area(
         "Ingrese el texto a analizar:",
@@ -91,12 +136,14 @@ def main():
     )
     
     if st.button("Analizar Texto") and texto_usuario:
-        analizador = AnalizadorTexto()
-        
         with st.spinner("Analizando texto..."):
-            resultados = analizador.procesar_texto(texto_usuario)
+            resultados = st.session_state.analizador.procesar_texto(texto_usuario)
             
-            # Mostrar resultados
+            # Mostrar resumen
+            st.subheader("Resumen")
+            st.write(resultados["resumen"])
+            
+            # Mostrar resultados en columnas
             col1, col2 = st.columns(2)
             
             with col1:
@@ -108,11 +155,10 @@ def main():
                 st.subheader("Análisis de Emociones")
                 for emocion, score in resultados["emociones"].items():
                     st.write(f"- {emocion}: {score*100:.2f}%")
-                
                 st.write(f"**Emoción predominante:** {resultados['emocion_predominante']}")
             
             # Mostrar conocimiento explícito
-            st.subheader("Conocimiento Explícito")
+            st.subheader("Conocimiento Relevante")
             for key, value in base_conocimientos["datos_relevantes"].items():
                 st.info(f"{key}: {value}")
 
