@@ -84,7 +84,7 @@ class AnalizadorTexto:
         )
         self.summarizer = load_summary_model()
 
-    def obtener_resumen(self, texto, max_length=150):
+    def obtener_resumen(self, texto, max_length=300):
         try:
             summary = self.summarizer(
                 texto,
