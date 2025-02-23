@@ -1,8 +1,8 @@
-streamlit==1.24.0
-spacy==3.5.0
-transformers==4.30.0
-scikit-learn==1.2.2
-torch==2.0.0
-plotly==5.13.0
-pandas==1.5.3
-es-core-news-sm @ https://github.com/explosion/spacy-models/releases/download/es_core_news_sm-3.5.0/es_core_news_sm-3.5.0-py3-none-any.whl
+streamlit
+torch
+spacy
+transformers
+scikit-learn
+matplotlib
+numpy
+es-core-news-sm @ https://github.com/explosion/spacy-models/releases/download/es_core_news_sm-3.7.0/es_core_news_sm-3.7.0.tar.gz
